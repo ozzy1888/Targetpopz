@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Target Blaster</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #e3f2fd;
+      font-family: 'Verdana', sans-serif;
+    }
+    canvas {
+      display: block;
+      background: #bbdefb;
+    }
+    #ui {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 10;
+      color: #0d47a1;
+    }
+    .bar {
+      margin: 5px 0;
+      font-size: 18px;
+    }
+    #powerup {
+      color: #d32f2f;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <div class="bar" id="score">Score: 0</div>
+    <div class="bar" id="timer">Time: 45s</div>
+    <div class="bar" id="high">High Score: 0</div>
+    <div class="bar" id="powerup"></div>
+  </div>
+
+  <!-- Sounds -->
+  <audio id="hitSound" src="https://cdn.pixabay.com/download/audio/2022/03/01/audio_cb5c80e6b7.mp3?filename=plop-99507.mp3"></audio>
+  <audio id="bgMusic" src="https://cdn.pixabay.com/download/audio/2022/03/15/audio_98c2c4bc6c.mp3?filename=calm-melody-94333.mp3" loop></audio>
+
+  <canvas id="gameCanvas"></canvas>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const scoreDisplay = document.getElementById('score');
+    const timerDisplay = document.getElementById('timer');
+    const highScoreDisplay = document.getElementById('high');
+    const powerupDisplay = document.getElementById('powerup');
+    const hitSound = document.getElementById('hitSound');
+    const bgMusic = document.getElementById('bgMusic');
+
+    let score = 0;
+    let highScore = localStorage.getItem('highScore') || 0;
+    let timeLeft = 45;
+    let gameActive = true;
+    let powerUp = null;
+    let freeze = false;
+
+    highScoreDisplay.innerText = "High Score: " + highScore;
+
+    class Target {
+      constructor() {
+        this.radius = 30;
+        this.x = Math.random() * (canvas.width - 60) + 30;
+        this.y = Math.random() * (canvas.height - 60) + 30;
+        this.dx = (Math.random() - 0.5) * 3;
+        this.dy = (Math.random() - 0.5) * 3;
+        this.color = '#ffa726'; // orange
+      }
+
+      draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.fill();
+        ctx.closePath();
+      }
+
+      update() {
+        if (!freeze) {
+          this.x += this.dx;
+          this.y += this.dy;
+        }
+        if (this.x < this.radius || this.x > canvas.width - this.radius) this.dx *= -1;
+        if (this.y < this.radius || this.y > canvas.height - this.radius) this.dy *= -1;
+        this.draw();
+      }
+
+      isHit(x, y) {
+        return Math.hypot(this.x - x, this.y - y) < this.radius;
+      }
+    }
+
+    class Particle {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.radius = 5;
+        this.life = 15;
+        this.color = 'orange';
+        this.dx = (Math.random() - 0.5) * 6;
+        this.dy = (Math.random() - 0.5) * 6;
+      }
+
+      update() {
+        this.x += this.dx;
+        this.y += this.dy;
+        this.life--;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.fill();
+        ctx.closePath();
+      }
+    }
+
+    const targets = [new Target(), new Target(), new Target()];
+    const particles = [];
+
+    function animate() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      targets.forEach(t => t.update());
+      for (let i = particles.length - 1; i >= 0; i--) {
+        particles[i].update();
+        if (particles[i].life <= 0) {
+          particles.splice(i, 1);
+        }
+      }
+      if (gameActive) requestAnimationFrame(animate);
+    }
+
+    animate();
+
+    function addScore(points) {
+      score += points;
+      scoreDisplay.innerText = "Score: " + score;
+      if (score > highScore) {
+        highScore = score;
+        localStorage.setItem('highScore', highScore);
+        highScoreDisplay.innerText = "High Score: " + highScore;
+      }
+    }
+
+    function activateRandomPowerup() {
+      const roll = Math.random();
+      if (roll < 0.4) {
+        powerUp = 'DOUBLE';
+        powerupDisplay.innerText = "Power-Up: Double Score!";
+        setTimeout(() => {
+          powerUp = null;
+          powerupDisplay.innerText = "";
+        }, 5000);
+      } else if (roll < 0.7) {
+        powerUp = 'FREEZE';
+        freeze = true;
+        powerupDisplay.innerText = "Power-Up: Freeze Targets!";
+        setTimeout(() => {
+          freeze = false;
+          powerUp = null;
+          powerupDisplay.innerText = "";
+        }, 4000);
+      } else {
+        powerUp = null;
+        powerupDisplay.innerText = "";
+      }
+    }
+
+    canvas.addEventListener('click', e => {
+      if (!gameActive) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      for (let i = 0; i < targets.length; i++) {
+        if (targets[i].isHit(x, y)) {
+          hitSound.currentTime = 0;
+          hitSound.play();
+
+          for (let j = 0; j < 10; j++) {
+            particles.push(new Particle(targets[i].x, targets[i].y));
+          }
+
+          const bonus = powerUp === 'DOUBLE' ? 2 : 1;
+          addScore(bonus);
+          targets[i] = new Target();
+
+          if (Math.random() < 0.2) activateRandomPowerup();
+          break;
+        }
+      }
+    });
+
+    const timerInterval = setInterval(() => {
+      if (timeLeft > 0) {
+        timeLeft--;
+        timerDisplay.innerText = "Time: " + timeLeft + "s";
+      } else {
+        gameActive = false;
+        timerDisplay.innerText = "Time's up!";
+        powerupDisplay.innerText = "";
+        bgMusic.pause();
+      }
+    }, 1000);
+
+    window.addEventListener("resize", () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    });
+
+    // 🎶 MUSIC AUTOPLAY FIX FOR MOBILE
+    function tryPlayMusic() {
+      if (bgMusic && bgMusic.paused) {
+        bgMusic.volume = 0.2;
+        bgMusic.play().catch(() => {});
+      }
+    }
+    ['click', 'touchstart'].forEach(evt => {
+      window.addEventListener(evt, tryPlayMusic, { once: true });
+    });
+  </script>
+</body>
+</html>
